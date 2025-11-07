@@ -37,18 +37,16 @@ export function SwipeDeck({ items }: Props) {
   }, [deck.length, index, api, gone])
 
   const performAction = useCallback(
-    (cardIndex: number, globalIndex: number, action: 'yes' | 'no' | 'next') => {
-      if (cardIndex !== 0) return
-
-      const card = items[globalIndex]
-      if (!card) return
+    (cardIndex: number, action: 'yes' | 'no' | 'next') => {
+      const currentCard = deck[cardIndex]
+      if (!currentCard) return
 
       if (action === 'yes' || action === 'no') {
-        const tok = pickOutcomeToken(card.tokens, action)
+        const tok = pickOutcomeToken(currentCard.tokens, action)
         open({
-          title: card.question,
+          title: currentCard.question,
           outcome: tok?.outcome || (action === 'yes' ? 'Yes' : 'No'),
-          slug: card.market_slug,
+          slug: currentCard.market_slug,
           tokenId: tok?.token_id,
           lastPrice: tok?.price,
         })
@@ -60,6 +58,8 @@ export function SwipeDeck({ items }: Props) {
 
         return
       }
+
+      if (cardIndex !== 0) return
 
       const exitYUp = -(window.innerHeight + 200)
 
@@ -76,10 +76,10 @@ export function SwipeDeck({ items }: Props) {
             ? { x: 0, y: exitYUp, rot: 0, scale: 1, opacity: 0 }
             : { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1 }
         )
-        setIndex((v: number) => Math.max(v, globalIndex) + 1)
+        setIndex((v: number) => v + 1)
       }, 150)
     },
-    [api, baseY, gone, items, open]
+    [api, baseY, deck, gone, open]
   )
 
   const bind = useGesture(
@@ -119,8 +119,7 @@ export function SwipeDeck({ items }: Props) {
         const shouldShowNew = !active && cardIndex === 0 && isVertical && dy < 0 && verticalTrigger
 
         if (shouldOpenYes || shouldOpenNo || shouldShowNew) {
-          const globalIndex = index + cardIndex
-          performAction(cardIndex, globalIndex, shouldShowNew ? 'next' : dirX > 0 ? 'yes' : 'no')
+          performAction(cardIndex, shouldShowNew ? 'next' : dirX > 0 ? 'yes' : 'no')
           return
         }
 
@@ -140,20 +139,19 @@ export function SwipeDeck({ items }: Props) {
       if (deck.length === 0) return
 
       const topIndex = 0
-      const globalIndex = index
 
       switch (event.key) {
         case 'ArrowRight':
           event.preventDefault()
-          performAction(topIndex, globalIndex, 'yes')
+          performAction(topIndex, 'yes')
           break
         case 'ArrowLeft':
           event.preventDefault()
-          performAction(topIndex, globalIndex, 'no')
+          performAction(topIndex, 'no')
           break
         case 'ArrowUp':
           event.preventDefault()
-          performAction(topIndex, globalIndex, 'next')
+          performAction(topIndex, 'next')
           break
         default:
           break
@@ -169,7 +167,7 @@ export function SwipeDeck({ items }: Props) {
       {springs.map((spring: any, i: number) => {
         const { x, y, rot, scale } = spring as any
         return (
-        <animated.div key={i} className="absolute inset-0 flex items-center justify-center" style={{ x, y }}>
+        <animated.div key={i} className="absolute inset-0 flex items-center justify-center" style={{ x, y, zIndex: deck.length - i }}>
           <animated.div
             {...bind(i)}
             className="w-full will-change-transform"

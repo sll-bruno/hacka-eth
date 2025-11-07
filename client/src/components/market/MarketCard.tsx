@@ -6,7 +6,11 @@ type Props = {
 
 export function MarketCard({ market }: Props) {
   const cover = market.image || market.icon
-  const outcomes = market.tokens?.slice(0, 2) ?? []
+  const tokens = market.tokens ?? []
+  const normalize = (value?: string) => value?.trim().toLowerCase() ?? ''
+  const yesToken = tokens.find((t) => normalize(t.outcome).startsWith('yes')) ?? tokens[0]
+  const noToken = tokens.find((t) => normalize(t.outcome).startsWith('no')) ?? tokens[1] ?? tokens[0]
+  const outcomes = [noToken, yesToken].filter(Boolean)
   return (
     <div className="relative w-full aspect-[3/4] select-none rounded-2xl border border-card-border bg-surface overflow-hidden">
       {cover ? <img src={cover} alt="cover" className="absolute inset-0 h-full w-full object-cover opacity-40" /> : null}
