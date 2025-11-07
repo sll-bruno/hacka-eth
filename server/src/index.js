@@ -54,6 +54,25 @@ app.post('/api/order', async (req, res) => {
   }
 })
 
+// Proxy for Polymarket markets API to bypass CORS
+app.get('/api/markets', async (req, res) => {
+  const { limit = '150' } = req.query
+  const url = `https://gamma-api.polymarket.com/markets?limit=${limit}&active=true&closed=false`
+
+  try {
+    const polymarketRes = await fetch(url)
+    if (!polymarketRes.ok) {
+      throw new Error(`Polymarket API responded with ${polymarketRes.status}`)
+    }
+    const data = await polymarketRes.json()
+    res.json(data)
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to fetch from Polymarket API:', error)
+    res.status(500).json({ error: 'Failed to fetch markets' })
+  }
+})
+
 
 const port = process.env.PORT || 8787
 app.listen(port, () => {
