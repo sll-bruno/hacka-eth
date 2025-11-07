@@ -17,34 +17,65 @@ export function SwipeDeck({ items }: Props) {
   const [index, setIndex] = useState(0)
   const { open } = useTradeStore()
 
+  const pickOutcomeToken = (tokens: PolymarketMarket['tokens'] = [], desired: 'yes' | 'no') => {
+    const normalizedDesired = desired === 'yes' ? 'yes' : 'no'
+    const normalizeOutcome = (value?: string) => value?.trim().toLowerCase() ?? ''
+    const match = tokens.find((t) => normalizeOutcome(t.outcome).startsWith(normalizedDesired))
+    if (match) return match
+    if (desired === 'yes') return tokens[0] || null
+    return tokens[1] || tokens[0] || null
+  }
+
   const deck = useMemo(() => items.slice(index, index + 3), [items, index])
-  const [springs, api] = useSprings(deck.length, (i) => ({ ...toStyle(i), from: fromStyle() }))
+  const [springs, api] = useSprings(deck.length, (i: number) => ({ ...toStyle(i), from: fromStyle() }))
 
   useEffect(() => {
     gone.clear()
-    api.start((i) => ({ ...toStyle(i), from: fromStyle() }))
+    api.start((i: number) => ({ ...toStyle(i), from: fromStyle() }))
   }, [deck.length, index, api, gone])
 
   const bind = useGesture(
     {
-      onDrag: ({ args: [cardIndex], active, movement: [mx], direction: [dx], velocity: [vx] }) => {
-        const trigger = Math.abs(mx) > 120 || Math.abs(vx) > 0.4
-        const dirX = dx < 0 ? -1 : 1
+      onDrag: (state: any) => {
+        const { args, active, movement, direction, velocity } = state
+        const [cardIndex] = (args ?? [0]) as [number]
+        const [mx, my] = (movement ?? [0, 0]) as [number, number]
+        const [dx, dy] = (direction ?? [0, 0]) as [number, number]
+        const [vx, vy] = (velocity ?? [0, 0]) as [number, number]
 
-        api.start((i) => {
+        const baseY = (i: number) => i * -4
+        const isVertical = Math.abs(my) > Math.abs(mx)
+        const isHorizontal = !isVertical
+        const horizontalTrigger = Math.abs(mx) > 120 || Math.abs(vx) > 0.4
+        const verticalTrigger = Math.abs(my) > 120 || Math.abs(vy) > 0.4
+        const dirX = dx < 0 ? -1 : 1
+        const exitX = (window.innerWidth + 200) * dirX
+        const exitY = window.innerHeight + 200
+
+        api.start((i: number) => {
           if (cardIndex !== i) return
           const isGone = gone.has(i)
-          const x = isGone ? (window.innerWidth + 200) * dirX : active ? mx : 0
-          const rot = mx / 25
           const scale = active ? 1.02 : 1
-          return { x, y: i * -4, rot, scale, opacity: isGone ? 0 : 1, config: { friction: 45, tension: active ? 600 : 400 } }
+
+          if (isHorizontal) {
+            const rot = mx / 25
+            const x = isGone ? exitX : active ? mx : 0
+            return { x, y: baseY(i), rot, scale, opacity: isGone ? 0 : 1, config: { friction: 45, tension: active ? 600 : 400 } }
+          }
+
+          const y = isGone ? exitY : baseY(i) + (active ? my : 0)
+          return { x: 0, y, rot: 0, scale, opacity: isGone ? 0 : 1, config: { friction: 45, tension: active ? 600 : 400 } }
         })
 
-        if (!active && trigger) {
+        const shouldOpenYes = !active && isHorizontal && horizontalTrigger && dirX > 0
+        const shouldOpenNo = !active && isHorizontal && horizontalTrigger && dirX < 0
+        const shouldDiscard = !active && !isHorizontal && dy > 0 && verticalTrigger
+
+        if (shouldOpenYes || shouldOpenNo || shouldDiscard) {
           gone.add(cardIndex)
           const card = deck[cardIndex]
-          if (dirX > 0) {
-            const tok = card.tokens?.[0]
+          if (shouldOpenYes) {
+            const tok = pickOutcomeToken(card.tokens, 'yes')
             open({
               title: card.question,
               outcome: tok?.outcome || 'Yes',
@@ -52,39 +83,55 @@ export function SwipeDeck({ items }: Props) {
               tokenId: tok?.token_id,
               lastPrice: tok?.price,
             })
+          } else if (shouldOpenNo) {
+            const tok = pickOutcomeToken(card.tokens, 'no')
+            open({
+              title: card.question,
+              outcome: tok?.outcome || 'No',
+              slug: card.market_slug,
+              tokenId: tok?.token_id,
+              lastPrice: tok?.price,
+            })
           }
 
           setTimeout(() => {
-            api.start((i) =>
+            api.start((i: number) =>
               gone.has(i)
-                ? { x: (window.innerWidth + 200) * dirX, opacity: 0 }
-                : { x: 0, rot: 0, scale: 1 }
+                ? shouldDiscard
+                  ? { x: 0, y: exitY, rot: 0, scale: 1, opacity: 0 }
+                  : { x: exitX, y: baseY(i), rot: 0, scale: 1, opacity: 0 }
+                : { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1 }
             )
-            if (cardIndex === 0) setIndex((v) => v + 1)
+            if (cardIndex === 0) setIndex((v: number) => v + 1)
           }, 150)
         }
 
-        if (!active && !trigger) {
-          api.start((i) => (cardIndex === i ? { x: 0, rot: 0, scale: 1 } : {}))
+        const shouldReset = !active && !shouldOpenYes && !shouldOpenNo && !shouldDiscard
+
+        if (shouldReset) {
+          api.start((i: number) => (cardIndex === i ? { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1 } : {}))
         }
       },
     },
-    { drag: { filterTaps: true, axis: 'x' } }
+    { drag: { filterTaps: true } }
   )
 
   return (
     <div className="relative h-[75vh] w-full overflow-hidden">
-      {springs.map(({ x, y, rot, scale }, i) => (
+      {springs.map((spring: any, i: number) => {
+        const { x, y, rot, scale } = spring as any
+        return (
         <animated.div key={i} className="absolute inset-0 flex items-center justify-center" style={{ x, y }}>
           <animated.div
             {...bind(i)}
             className="w-full will-change-transform"
-            style={{ transform: to([rot, scale], (r, s) => `perspective(1600px) rotateZ(${r}deg) scale(${s})`) }}
+              style={{ transform: to([rot, scale], (r: number, s: number) => `perspective(1600px) rotateZ(${r}deg) scale(${s})`) }}
           >
             <MarketCard market={deck[i]} />
           </animated.div>
         </animated.div>
-      ))}
+        )
+      })}
     </div>
   )
 }
