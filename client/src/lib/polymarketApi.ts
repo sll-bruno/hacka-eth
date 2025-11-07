@@ -14,20 +14,24 @@ export async function fetchMarkets(limit = 150): Promise<PolymarketMarket[]> {
 
     // Data transformation: The new API returns outcomes/prices differently.
     // We need to transform it back into the shape the UI expects (with a `tokens` array).
-    return markets.map((market) => {
+    return markets
+      .map((market) => {
       const outcomeNames: string[] = JSON.parse(market.outcomes || '[]')
       const outcomePrices: string[] = JSON.parse(market.outcomePrices || '[]')
       const tokenIds: string[] = JSON.parse(market.clobTokenIds || '[]')
 
-      const tokens: PolymarketToken[] = outcomeNames.map((name, i) => ({
-        outcome: name,
-        price: parseFloat(outcomePrices[i]),
-        token_id: tokenIds[i] || `${market.id}-${i}`,
-        winner: false, // Not provided by this API, default to false
-      }))
+        const tokens: PolymarketToken[] = outcomeNames.map((name, i) => ({
+          outcome: name,
+          price: parseFloat(outcomePrices[i]),
+          token_id: tokenIds[i] || `${market.id}-${i}`,
+          winner: false, // Not provided by this API, default to false
+        }))
 
-      return { ...market, tokens }
-    })
+        const sanitizedTokens = tokens.filter((token) => Number.isFinite(token.price))
+
+        return { ...market, tokens: sanitizedTokens }
+      })
+      .filter((market) => (market.tokens?.length ?? 0) >= 2)
   } catch (error) {
     console.error('Failed to fetch markets from proxy:', error)
     throw error
