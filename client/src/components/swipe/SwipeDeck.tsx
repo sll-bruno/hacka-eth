@@ -37,11 +37,11 @@ export function SwipeDeck({ items }: Props) {
   }, [deck.length, index, api, gone])
 
   const performAction = useCallback(
-    (cardIndex: number, action: 'yes' | 'no' | 'next') => {
-      const card = deck[cardIndex]
-      if (!card) return
+    (cardIndex: number, globalIndex: number, action: 'yes' | 'no' | 'next') => {
+      if (cardIndex !== 0) return
 
-      gone.add(cardIndex)
+      const card = items[globalIndex]
+      if (!card) return
 
       if (action === 'yes' || action === 'no') {
         const tok = pickOutcomeToken(card.tokens, action)
@@ -52,32 +52,34 @@ export function SwipeDeck({ items }: Props) {
           tokenId: tok?.token_id,
           lastPrice: tok?.price,
         })
+
+        gone.delete(cardIndex)
+        api.start((i: number) =>
+          i === cardIndex ? { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1, config: { friction: 45, tension: 400 } } : undefined
+        )
+
+        return
       }
 
-      const exitXDir = action === 'no' ? -1 : 1
-      const exitX = (window.innerWidth + 200) * exitXDir
       const exitYUp = -(window.innerHeight + 200)
+
+      gone.add(cardIndex)
 
       api.start((i: number) => {
         if (cardIndex !== i) return undefined
-        if (action === 'next') {
-          return { x: 0, y: exitYUp, rot: 0, scale: 1, opacity: 0, config: { friction: 45, tension: 400 } }
-        }
-        return { x: exitX, y: baseY(i), rot: exitXDir * 12, scale: 1, opacity: 0, config: { friction: 45, tension: 400 } }
+        return { x: 0, y: exitYUp, rot: 0, scale: 1, opacity: 0, config: { friction: 45, tension: 400 } }
       })
 
       setTimeout(() => {
         api.start((i: number) =>
           gone.has(i)
-            ? action === 'next'
-              ? { x: 0, y: exitYUp, rot: 0, scale: 1, opacity: 0 }
-              : { x: exitX, y: baseY(i), rot: 0, scale: 1, opacity: 0 }
+            ? { x: 0, y: exitYUp, rot: 0, scale: 1, opacity: 0 }
             : { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1 }
         )
-        if (cardIndex === 0) setIndex((v: number) => v + 1)
+        setIndex((v: number) => Math.max(v, globalIndex) + 1)
       }, 150)
     },
-    [api, baseY, deck, gone, open]
+    [api, baseY, gone, items, open]
   )
 
   const bind = useGesture(
@@ -112,12 +114,13 @@ export function SwipeDeck({ items }: Props) {
           return { x: 0, y, rot: 0, scale, opacity: isGone ? 0 : 1, config: { friction: 45, tension: active ? 600 : 400 } }
         })
 
-        const shouldOpenYes = !active && isHorizontal && horizontalTrigger && dirX > 0
-        const shouldOpenNo = !active && isHorizontal && horizontalTrigger && dirX < 0
-        const shouldShowNew = !active && isVertical && dy < 0 && verticalTrigger
+        const shouldOpenYes = !active && cardIndex === 0 && isHorizontal && horizontalTrigger && dirX > 0
+        const shouldOpenNo = !active && cardIndex === 0 && isHorizontal && horizontalTrigger && dirX < 0
+        const shouldShowNew = !active && cardIndex === 0 && isVertical && dy < 0 && verticalTrigger
 
         if (shouldOpenYes || shouldOpenNo || shouldShowNew) {
-          performAction(cardIndex, shouldShowNew ? 'next' : dirX > 0 ? 'yes' : 'no')
+          const globalIndex = index + cardIndex
+          performAction(cardIndex, globalIndex, shouldShowNew ? 'next' : dirX > 0 ? 'yes' : 'no')
           return
         }
 
@@ -137,19 +140,20 @@ export function SwipeDeck({ items }: Props) {
       if (deck.length === 0) return
 
       const topIndex = 0
+      const globalIndex = index
 
       switch (event.key) {
         case 'ArrowRight':
           event.preventDefault()
-          performAction(topIndex, 'yes')
+          performAction(topIndex, globalIndex, 'yes')
           break
         case 'ArrowLeft':
           event.preventDefault()
-          performAction(topIndex, 'no')
+          performAction(topIndex, globalIndex, 'no')
           break
         case 'ArrowUp':
           event.preventDefault()
-          performAction(topIndex, 'next')
+          performAction(topIndex, globalIndex, 'next')
           break
         default:
           break
@@ -158,7 +162,7 @@ export function SwipeDeck({ items }: Props) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [deck, performAction])
+  }, [deck, index, performAction])
 
   return (
     <div className="relative h-[75vh] w-full overflow-hidden">
