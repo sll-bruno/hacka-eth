@@ -21,7 +21,7 @@ export function HomeScreen() {
         )}
         {!isLoading && !isError && markets.length > 0 && <SwipeDeck items={markets} />}
         <div className="mt-4 text-center text-xs text-white/40">
-          Swipe ➡️ para apostar · ⬅️ para pular
+          Swipe ➡️ para YES · ⬅️ para NO · ⬆️ para pular
         </div>
       </div>
       <BidModal />

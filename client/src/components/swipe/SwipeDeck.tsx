@@ -15,7 +15,7 @@ type Props = {
 export function SwipeDeck({ items }: Props) {
   const [gone] = useState(() => new Set<number>())
   const [index, setIndex] = useState(0)
-  const { open } = useTradeStore()
+  const { open, close } = useTradeStore()
 
   const baseY = useCallback((i: number) => i * -4, [])
 
@@ -37,7 +37,7 @@ export function SwipeDeck({ items }: Props) {
   }, [deck.length, index, api, gone])
 
   const performAction = useCallback(
-    (cardIndex: number, action: 'yes' | 'no' | 'next') => {
+    (cardIndex: number, action: 'yes' | 'no' | 'next' | 'cancel') => {
       const currentCard = deck[cardIndex]
       if (!currentCard) return
 
@@ -62,6 +62,14 @@ export function SwipeDeck({ items }: Props) {
       if (cardIndex !== 0) return
 
       const exitYUp = -(window.innerHeight + 200)
+
+      if (action === 'cancel') {
+        gone.delete(cardIndex)
+        api.start((i: number) =>
+          i === cardIndex ? { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1, config: { friction: 45, tension: 400 } } : undefined
+        )
+        return
+      }
 
       gone.add(cardIndex)
 
@@ -153,8 +161,11 @@ export function SwipeDeck({ items }: Props) {
           event.preventDefault()
           performAction(topIndex, 'next')
           break
-        default:
-          break
+          case 'Escape':
+            event.preventDefault()
+            close()            // fecha o modal igual ao botão Cancel
+            performAction(topIndex, 'cancel')  // opcional: re-centra a carta se quiser manter o comportamento visual
+            break
       }
     }
 
