@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSprings, animated, to } from '@react-spring/web'
 import { useGesture } from '@use-gesture/react'
 import type { PolymarketMarket } from '../../types/polymarket'
@@ -17,6 +17,8 @@ export function SwipeDeck({ items }: Props) {
   const [index, setIndex] = useState(0)
   const { open } = useTradeStore()
 
+  const baseY = useCallback((i: number) => i * -4, [])
+
   const pickOutcomeToken = (tokens: PolymarketMarket['tokens'] = [], desired: 'yes' | 'no') => {
     const normalizedDesired = desired === 'yes' ? 'yes' : 'no'
     const normalizeOutcome = (value?: string) => value?.trim().toLowerCase() ?? ''
@@ -34,6 +36,50 @@ export function SwipeDeck({ items }: Props) {
     api.start((i: number) => ({ ...toStyle(i), from: fromStyle() }))
   }, [deck.length, index, api, gone])
 
+  const performAction = useCallback(
+    (cardIndex: number, action: 'yes' | 'no' | 'next') => {
+      const card = deck[cardIndex]
+      if (!card) return
+
+      gone.add(cardIndex)
+
+      if (action === 'yes' || action === 'no') {
+        const tok = pickOutcomeToken(card.tokens, action)
+        open({
+          title: card.question,
+          outcome: tok?.outcome || (action === 'yes' ? 'Yes' : 'No'),
+          slug: card.market_slug,
+          tokenId: tok?.token_id,
+          lastPrice: tok?.price,
+        })
+      }
+
+      const exitXDir = action === 'no' ? -1 : 1
+      const exitX = (window.innerWidth + 200) * exitXDir
+      const exitYUp = -(window.innerHeight + 200)
+
+      api.start((i: number) => {
+        if (cardIndex !== i) return undefined
+        if (action === 'next') {
+          return { x: 0, y: exitYUp, rot: 0, scale: 1, opacity: 0, config: { friction: 45, tension: 400 } }
+        }
+        return { x: exitX, y: baseY(i), rot: exitXDir * 12, scale: 1, opacity: 0, config: { friction: 45, tension: 400 } }
+      })
+
+      setTimeout(() => {
+        api.start((i: number) =>
+          gone.has(i)
+            ? action === 'next'
+              ? { x: 0, y: exitYUp, rot: 0, scale: 1, opacity: 0 }
+              : { x: exitX, y: baseY(i), rot: 0, scale: 1, opacity: 0 }
+            : { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1 }
+        )
+        if (cardIndex === 0) setIndex((v: number) => v + 1)
+      }, 150)
+    },
+    [api, baseY, deck, gone, open]
+  )
+
   const bind = useGesture(
     {
       onDrag: (state: any) => {
@@ -43,14 +89,13 @@ export function SwipeDeck({ items }: Props) {
         const [dx, dy] = (direction ?? [0, 0]) as [number, number]
         const [vx, vy] = (velocity ?? [0, 0]) as [number, number]
 
-        const baseY = (i: number) => i * -4
         const isVertical = Math.abs(my) > Math.abs(mx)
         const isHorizontal = !isVertical
         const horizontalTrigger = Math.abs(mx) > 120 || Math.abs(vx) > 0.4
         const verticalTrigger = Math.abs(my) > 120 || Math.abs(vy) > 0.4
         const dirX = dx < 0 ? -1 : 1
         const exitX = (window.innerWidth + 200) * dirX
-        const exitY = window.innerHeight + 200
+        const exitYUp = -(window.innerHeight + 200)
 
         api.start((i: number) => {
           if (cardIndex !== i) return
@@ -63,50 +108,20 @@ export function SwipeDeck({ items }: Props) {
             return { x, y: baseY(i), rot, scale, opacity: isGone ? 0 : 1, config: { friction: 45, tension: active ? 600 : 400 } }
           }
 
-          const y = isGone ? exitY : baseY(i) + (active ? my : 0)
+          const y = isGone ? exitYUp : baseY(i) + (active ? my : 0)
           return { x: 0, y, rot: 0, scale, opacity: isGone ? 0 : 1, config: { friction: 45, tension: active ? 600 : 400 } }
         })
 
         const shouldOpenYes = !active && isHorizontal && horizontalTrigger && dirX > 0
         const shouldOpenNo = !active && isHorizontal && horizontalTrigger && dirX < 0
-        const shouldDiscard = !active && !isHorizontal && dy > 0 && verticalTrigger
+        const shouldShowNew = !active && isVertical && dy < 0 && verticalTrigger
 
-        if (shouldOpenYes || shouldOpenNo || shouldDiscard) {
-          gone.add(cardIndex)
-          const card = deck[cardIndex]
-          if (shouldOpenYes) {
-            const tok = pickOutcomeToken(card.tokens, 'yes')
-            open({
-              title: card.question,
-              outcome: tok?.outcome || 'Yes',
-              slug: card.market_slug,
-              tokenId: tok?.token_id,
-              lastPrice: tok?.price,
-            })
-          } else if (shouldOpenNo) {
-            const tok = pickOutcomeToken(card.tokens, 'no')
-            open({
-              title: card.question,
-              outcome: tok?.outcome || 'No',
-              slug: card.market_slug,
-              tokenId: tok?.token_id,
-              lastPrice: tok?.price,
-            })
-          }
-
-          setTimeout(() => {
-            api.start((i: number) =>
-              gone.has(i)
-                ? shouldDiscard
-                  ? { x: 0, y: exitY, rot: 0, scale: 1, opacity: 0 }
-                  : { x: exitX, y: baseY(i), rot: 0, scale: 1, opacity: 0 }
-                : { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1 }
-            )
-            if (cardIndex === 0) setIndex((v: number) => v + 1)
-          }, 150)
+        if (shouldOpenYes || shouldOpenNo || shouldShowNew) {
+          performAction(cardIndex, shouldShowNew ? 'next' : dirX > 0 ? 'yes' : 'no')
+          return
         }
 
-        const shouldReset = !active && !shouldOpenYes && !shouldOpenNo && !shouldDiscard
+        const shouldReset = !active && !shouldOpenYes && !shouldOpenNo && !shouldShowNew
 
         if (shouldReset) {
           api.start((i: number) => (cardIndex === i ? { x: 0, y: baseY(i), rot: 0, scale: 1, opacity: 1 } : {}))
@@ -115,6 +130,35 @@ export function SwipeDeck({ items }: Props) {
     },
     { drag: { filterTaps: true } }
   )
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return
+      if (deck.length === 0) return
+
+      const topIndex = 0
+
+      switch (event.key) {
+        case 'ArrowRight':
+          event.preventDefault()
+          performAction(topIndex, 'yes')
+          break
+        case 'ArrowLeft':
+          event.preventDefault()
+          performAction(topIndex, 'no')
+          break
+        case 'ArrowUp':
+          event.preventDefault()
+          performAction(topIndex, 'next')
+          break
+        default:
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [deck, performAction])
 
   return (
     <div className="relative h-[75vh] w-full overflow-hidden">
